@@ -9,17 +9,46 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import org.springframework.stereotype.Service;
 
+import com.policypulse.persistence.entity.SessionChunkEntity;
+import com.policypulse.persistence.repository.SessionChunkRepository;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Map;
 
 @Service
 public class InMemoryVectorIndexService {
 
+    private static final Logger log = LoggerFactory.getLogger(InMemoryVectorIndexService.class);
+
     private final EmbeddingStore<TextSegment> embeddingStore = new InMemoryEmbeddingStore<>();
     private final OllamaEmbeddingModel embeddingModel;
+    private final SessionChunkRepository sessionChunkRepository;
 
-    public InMemoryVectorIndexService(OllamaEmbeddingModel embeddingModel) {
+    public InMemoryVectorIndexService(OllamaEmbeddingModel embeddingModel, SessionChunkRepository sessionChunkRepository) {
         this.embeddingModel = embeddingModel;
+        this.sessionChunkRepository = sessionChunkRepository;
+    }
+
+    @PostConstruct
+    public void loadFromDatabaseOnStartup() {
+        List<SessionChunkEntity> chunks = sessionChunkRepository.findAll();
+        if (chunks.isEmpty()) {
+            return;
+        }
+        log.info("Loading {} chunks from database into in-memory vector store...", chunks.size());
+        int loaded = 0;
+        for (SessionChunkEntity chunk : chunks) {
+            try {
+                add(chunk.getSessionId(), chunk.getDocumentId(), chunk.getChunkIndex(), chunk.getChunkText());
+                loaded++;
+            } catch (Exception ex) {
+                log.warn("Failed to load chunk {} into vector store", chunk.getId(), ex);
+            }
+        }
+        log.info("Successfully loaded {} chunks into in-memory vector store.", loaded);
     }
 
     public String add(long sessionId, long documentId, int chunkIndex, String chunkText) {

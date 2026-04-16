@@ -49,4 +49,28 @@ public class SessionChunkEntity {
     public void setVectorRef(String vectorRef) {
         this.vectorRef = vectorRef;
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public Long getSessionId() {
+        return sessionId;
+    }
+
+    public Long getDocumentId() {
+        return documentId;
+    }
+
+    public int getChunkIndex() {
+        return chunkIndex;
+    }
+
+    public String getChunkText() {
+        return chunkText;
+    }
+
+    public String getVectorRef() {
+        return vectorRef;
+    }
 }

@@ -18,6 +18,7 @@ public class RagChatService {
 
     private final InMemoryVectorIndexService vectorIndexService;
     private final OllamaChatModel chatModel;
+    private final dev.langchain4j.memory.ChatMemory chatMemory = dev.langchain4j.memory.chat.MessageWindowChatMemory.withMaxMessages(10);
 
     public RagChatService(InMemoryVectorIndexService vectorIndexService, OllamaChatModel chatModel) {
         this.vectorIndexService = vectorIndexService;
@@ -30,23 +31,40 @@ public class RagChatService {
                 .map(m -> m.embedded().text())
                 .collect(Collectors.joining("\n---\n"));
 
-        String prompt = """
-                You are a policy impact assistant for India.
-                Persona: %s
-                User question: %s
+        // Record the clean user question into memory to avoid polluting history with massive RSS chunks
+        chatMemory.add(dev.langchain4j.data.message.UserMessage.from(question));
 
-                Use only the following retrieved context when possible:
+        dev.langchain4j.data.message.SystemMessage sysMsg = dev.langchain4j.data.message.SystemMessage.from(
+                "You are a policy impact assistant for India. Persona: " + persona.name() + 
+                "\nProvide a concise practical answer using the context provided in the user's latest query. If context doesn't have the answer, just answer normally or mention it's missing."
+        );
+
+        List<dev.langchain4j.data.message.ChatMessage> messages = new java.util.ArrayList<>();
+        messages.add(sysMsg);
+        
+        // Add chat history (excluding the extremely recent clean question we just added, to replace it with the context-augmented version)
+        List<dev.langchain4j.data.message.ChatMessage> history = chatMemory.messages();
+        for (int i = 0; i < history.size() - 1; i++) {
+            messages.add(history.get(i));
+        }
+
+        // Ephemerally inject the RAG context only into the current prompt
+        String ephemeralPrompt = """
+                Retrieved Policy Context:
                 %s
 
-                Provide a concise practical answer and mention uncertainty if context is weak.
-                """.formatted(persona.name(), question, context.isBlank() ? "No matching context found." : context);
+                User question: %s
+                """.formatted(context.isBlank() ? "No matching context found." : context, question);
+        
+        messages.add(dev.langchain4j.data.message.UserMessage.from(ephemeralPrompt));
 
-        String answer = chatModel.generate(List.of(UserMessage.from(prompt)))
-                .content()
-                .text();
+        dev.langchain4j.data.message.AiMessage answer = chatModel.generate(messages).content();
+        chatMemory.add(answer);
+
         List<String> sources = matches.stream()
                 .map(m -> m.embedded().metadata().getString("documentId") + ":" + m.embedded().metadata().getString("chunkIndex"))
                 .toList();
-        return new ChatResponseView(answer, sources, List.of(SessionType.SESSION_1, SessionType.SESSION_2, SessionType.SESSION_3));
+
+        return new ChatResponseView(answer.text(), sources, List.of(SessionType.SESSION_1, SessionType.SESSION_2, SessionType.SESSION_3));
     }
 }
