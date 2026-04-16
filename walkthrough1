@@ -1,0 +1,78 @@
+# Policy Pulse RAG — Bug Fix Walkthrough
+
+## The Problem
+
+When querying the `sessions` GraphQL endpoint, the response was returning an error because the backend couldn't serialize the response properly.
+
+## Root Cause: GraphQL Schema ↔ Java Type Mismatch
+
+The GraphQL schema declares `scrapeDate` and `activatedAt` as **`String`** types:
+
+```graphql
+type Session {
+  scrapeDate: String!    # ← String
+  activatedAt: String    # ← String
+}
+```
+
+But the Java `SessionView` record was returning **`LocalDate`** and **`OffsetDateTime`** objects:
+
+```java
+public record SessionView(
+    ...
+    LocalDate scrapeDate,        // ← NOT a String
+    OffsetDateTime activatedAt   // ← NOT a String
+) {}
+```
+
+Spring GraphQL (graphql-java) **cannot auto-coerce** Java date/time objects to the GraphQL `String` scalar. It throws a serialization error like:
+
+> *"Can't serialize value — type 'LocalDate' doesn't match expected type 'String'"*
+
+## The Fix (2 files changed)
+
+### 1. [SessionView.java](file:///c:/Users/smart/OneDrive/Desktop/Projects/src/main/java/com/policypulse/graphql/dto/SessionView.java)
+
+Changed both fields from date/time types to `String`:
+
+```diff
+ public record SessionView(
+         String id,
+         int year,
+         SessionType sessionType,
+         SessionStatus status,
+-        LocalDate scrapeDate,
+-        OffsetDateTime activatedAt
++        String scrapeDate,
++        String activatedAt
+ ) {}
+```
+
+### 2. [ChronologyService.java](file:///c:/Users/smart/OneDrive/Desktop/Projects/src/main/java/com/policypulse/chronology/ChronologyService.java#L79-L86)
+
+Updated the mapping code to convert the entity's date/time values to strings:
+
+```diff
+ .map(it -> new SessionView(
+         String.valueOf(it.getId()),
+         it.getYear(),
+         it.getSessionType(),
+         it.getStatus(),
+-        it.getScrapeDate(),
+-        it.getActivatedAt()
++        it.getScrapeDate().toString(),
++        it.getActivatedAt() != null ? it.getActivatedAt().toString() : null
+ ))
+```
+
+## Verification — All 3 Queries Tested & Passing ✅
+
+| Query | Status | Sample Response |
+|---|---|---|
+| `systemStatus` | ✅ | `currentYear: 2026, activeSessions: [SESSION_1]` |
+| `sessions(year: 2026)` | ✅ **Fixed** | 3 sessions returned with proper `scrapeDate`/`activatedAt` strings |
+| `ingestionDiagnostics` | ✅ | All counters returned correctly |
+
+### Postman Collection
+
+A **"Policy Pulse RAG - GraphQL Tests"** collection was created in your Postman workspace with pre-built requests for all 4 GraphQL operations (3 queries + 1 mutation).

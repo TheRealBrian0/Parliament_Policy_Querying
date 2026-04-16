@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: policy-pulse-rag
+  datasource:
+    url: jdbc:mysql://localhost:3306/policy_pulse?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: root_pass
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  graphql:
+    graphiql:
+      enabled: true
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: policy-pulse-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.policypulse.*
+        spring.json.value.default.type: com.policypulse.kafka.event.SessionScrapedEvent
+        spring.json.use.type.headers: false
+
+server:
+  port: 8080
+
+app:
+  topics:
+    session-data-scraped: session-data-scraped
+  chronology:
+    session1-month: 2
+    session1-day: 1
+    session2-month: 6
+    session2-day: 1
+    session3-month: 10
+    session3-day: 1
+    reconcile-cron: "0 */10 * * * *"
+  ollama:
+    base-url: http://localhost:11434
+    chat-model: llama3:8b-instruct-q4_K_M
+    embedding-model: nomic-embed-text:latest

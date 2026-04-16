@@ -1,0 +1,114 @@
+"""
+Top-level GraphQL query operations for read APIs.
+In later phases these resolvers will read from JPA + Vector context status services.
+"""
+type Query {
+  """
+  Returns active ingestion/runtime status for the chatbot platform.
+  """
+  systemStatus: SystemStatus!
+
+  """
+  Returns all configured sessions for a given year (typically 3 parliamentary sessions).
+  """
+  sessions(year: Int!): [Session!]!
+
+  """
+  Returns last ingestion diagnostics counters for RSS and PRS collectors.
+  """
+  ingestionDiagnostics: IngestionDiagnostics!
+}
+
+"""
+Top-level GraphQL mutation operations for write/inference APIs.
+"""
+type Mutation {
+  """
+  Sends a persona-aware question through the RAG pipeline and gets model-generated answer.
+  """
+  askQuestion(input: AskQuestionInput!): ChatResponse!
+}
+
+"""
+System-level operational health and chronology data shown in admin dashboards.
+"""
+type SystemStatus {
+  currentYear: Int!
+  activeSessions: [SessionType!]!
+  vectorContextYear: Int
+  lastIngestionAt: String
+}
+
+"""
+Parliamentary session metadata tracked for chronology and scraping orchestration.
+"""
+type Session {
+  id: ID!
+  year: Int!
+  sessionType: SessionType!
+  status: SessionStatus!
+  scrapeDate: String!
+  activatedAt: String
+}
+
+"""
+End-user domain profile used for contextualized response style.
+"""
+enum Persona {
+  TRADE_AND_SMALL_BUSINESS
+  INDUSTRY_AND_LOGISTICS
+  FINANCE_AND_PROFESSIONAL
+  PUBLIC_AND_COMMUNITY
+  STUDENT_AND_EDUCATOR
+  GENERAL_CITIZEN
+}
+
+"""
+Three session windows supported by chronology engine each year.
+"""
+enum SessionType {
+  SESSION_1
+  SESSION_2
+  SESSION_3
+}
+
+"""
+Lifecycle state of session ingestion.
+"""
+enum SessionStatus {
+  SCHEDULED
+  SCRAPED
+  EMBEDDED
+  ACTIVE
+}
+
+"""
+Chatbot request payload.
+"""
+input AskQuestionInput {
+  persona: Persona!
+  question: String!
+}
+
+"""
+Chatbot response payload including source chunk IDs for transparency.
+"""
+type ChatResponse {
+  answer: String!
+  sources: [String!]!
+  sessionScope: [SessionType!]!
+}
+
+"""
+Runtime counters for ingestion observability during demos and operations.
+"""
+type IngestionDiagnostics {
+  lastRunAt: String
+  rssFeedsChecked: Int!
+  rssAccepted: Int!
+  rssRejected: Int!
+  prsPdfLinksChecked: Int!
+  prsPdfAccepted: Int!
+  prsPdfRejected: Int!
+  totalPublished: Int!
+}

@@ -1,0 +1,12 @@
+https://services.india.gov.in/feed/rss?cat_id=9&ln=en
+https://services.india.gov.in/feed/rss?cat_id=12&ln=en
+https://services.india.gov.in/feed/rss?cat_id=14&ln=en
+https://services.india.gov.in/feed/rss?cat_id=13&ln=en
+https://services.india.gov.in/feed/rss?cat_id=1&ln=en
+https://services.india.gov.in/feed/rss?cat_id=5&ln=en
+https://services.india.gov.in/feed/rss?cat_id=3&ln=en
+https://services.india.gov.in/feed/rss?cat_id=7&ln=en
+https://services.india.gov.in/feed/rss?cat_id=2&ln=en
+https://services.india.gov.in/feed/rss?cat_id=10&ln=en
+https://services.india.gov.in/feed/rss?cat_id=6&ln=en
+https://services.india.gov.in/feed/rss?cat_id=16&ln=en
