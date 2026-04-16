@@ -84,4 +84,13 @@ public class ChatGraphQlController {
     public ChatResponseView askQuestion(@Argument @Valid AskQuestionInput input) {
         return ragChatService.ask(input.persona(), input.question());
     }
+
+    /*
+     * Manual sync trigger exposed to admin UI for demos and forced reconciliation.
+     */
+    @MutationMapping
+    public boolean triggerIngestion() {
+        chronologyService.reconcileOnStartup();
+        return true;
+    }
 }

@@ -47,8 +47,7 @@ public class HybridGovDataCollector {
     public HybridGovDataCollector(
             ResourceLoader resourceLoader,
             SessionDocumentRepository sessionDocumentRepository,
-            EnglishTextFilter englishTextFilter
-    ) {
+            EnglishTextFilter englishTextFilter) {
         this.resourceLoader = resourceLoader;
         this.sessionDocumentRepository = sessionDocumentRepository;
         this.englishTextFilter = englishTextFilter;
@@ -56,8 +55,8 @@ public class HybridGovDataCollector {
 
     public List<MockScrapedDocument> collectForSession(int year, SessionType sessionType, long sessionId) {
         List<MockScrapedDocument> merged = new ArrayList<>();
-        int[] rssStats = new int[]{0, 0, 0}; // checked, accepted, rejected
-        int[] prsStats = new int[]{0, 0, 0}; // checked, accepted, rejected
+        int[] rssStats = new int[] { 0, 0, 0 }; // checked, accepted, rejected
+        int[] prsStats = new int[] { 0, 0, 0 }; // checked, accepted, rejected
         merged.addAll(collectRssDocuments(year, sessionId, rssStats));
         merged.addAll(collectPrsPdfDocuments(year, sessionId, prsStats));
         lastDiagnostics = new IngestionDiagnosticsSnapshot(
@@ -67,9 +66,9 @@ public class HybridGovDataCollector {
                 rssStats[2],
                 prsStats[0],
                 prsStats[1],
-                prsStats[2]
-        );
-        log.info("Ingestion summary: rssFeedsChecked={}, rssAccepted={}, rssRejected={}, prsChecked={}, prsAccepted={}, prsRejected={}",
+                prsStats[2]);
+        log.info(
+                "Ingestion summary: rssFeedsChecked={}, rssAccepted={}, rssRejected={}, prsChecked={}, prsAccepted={}, prsRejected={}",
                 rssStats[0], rssStats[1], rssStats[2], prsStats[0], prsStats[1], prsStats[2]);
         return merged;
     }
@@ -85,7 +84,8 @@ public class HybridGovDataCollector {
             try (XmlReader reader = new XmlReader(URI.create(feedUrl).toURL())) {
                 SyndFeed feed = new SyndFeedInput().build(reader);
                 for (SyndEntry entry : feed.getEntries()) {
-                    OffsetDateTime publishedAt = toOffsetDateTime(entry.getPublishedDate() != null ? entry.getPublishedDate().toInstant() : Instant.now());
+                    OffsetDateTime publishedAt = toOffsetDateTime(
+                            entry.getPublishedDate() != null ? entry.getPublishedDate().toInstant() : Instant.now());
                     if (publishedAt.getYear() != year) {
                         rssStats[2]++;
                         continue;
@@ -117,38 +117,77 @@ public class HybridGovDataCollector {
     private List<MockScrapedDocument> collectPrsPdfDocuments(int year, long sessionId, int[] prsStats) {
         List<MockScrapedDocument> docs = new ArrayList<>();
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(PRS_MONTHLY_URL)).GET().build();
+            HttpRequest req = HttpRequest.newBuilder(URI.create(PRS_MONTHLY_URL))
+                    .header("User-Agent",
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                    .GET()
+                    .build();
             String html = httpClient.send(req, HttpResponse.BodyHandlers.ofString()).body();
             Document page = Jsoup.parse(html, PRS_MONTHLY_URL);
-            for (Element link : page.select("a[href$=.pdf], a[href*=.pdf?]")) {
+
+            // We check both current and previous year to ensure we have context
+            List<Integer> targetYears = List.of(year, year - 1);
+
+            for (Element link : page.select("a[href]")) {
+                String pdfUrl = link.absUrl("href").toLowerCase();
+                if (!pdfUrl.endsWith(".pdf") && !pdfUrl.contains(".pdf?")) {
+                    continue;
+                }
+
                 prsStats[0]++;
-                String pdfUrl = link.absUrl("href");
-                if (!isStrictMonthlyPolicyReviewPdf(link, pdfUrl, year)) {
+                String absPdfUrl = link.absUrl("href");
+
+                Integer matchedYear = null;
+                for (int y : targetYears) {
+                    if (isStrictMonthlyPolicyReviewPdf(link, absPdfUrl, y)) {
+                        matchedYear = y;
+                        break;
+                    }
+                }
+
+                if (matchedYear == null) {
                     prsStats[2]++;
                     continue;
                 }
-                String text = extractPdfText(pdfUrl);
-                if (!englishTextFilter.isLikelyEnglish(text)) {
+
+                String text = extractPdfText(absPdfUrl);
+                if (text == null || text.isBlank() || !englishTextFilter.isLikelyEnglish(text)) {
                     prsStats[2]++;
                     continue;
                 }
+
                 OffsetDateTime publishedAt = OffsetDateTime.now(ZoneOffset.UTC);
-                String title = link.text().isBlank() ? "PRS Monthly Policy Review " + year : link.text();
-                String fingerprint = fingerprint(pdfUrl, publishedAt.toLocalDate().toString(), title, text);
+                String title = link.text().trim();
+                if (title.isBlank() || title.equalsIgnoreCase("Download") || title.equalsIgnoreCase("Read More")) {
+                    title = "PRS Monthly Policy Review - " + matchedYear + " (Source: "
+                            + (absPdfUrl.contains("march") ? "March" : "Recent") + ")";
+                }
+
+                String fingerprint = fingerprint(absPdfUrl, publishedAt.toLocalDate().toString(), title, text);
                 if (sessionDocumentRepository.existsByFingerprint(fingerprint)) {
                     prsStats[2]++;
                     continue;
                 }
-                Long docId = persistDocument(sessionId, pdfUrl, title, text, publishedAt, fingerprint);
-                docs.add(new MockScrapedDocument(docId, pdfUrl, title, text, publishedAt));
+                Long docId = persistDocument(sessionId, absPdfUrl, title, text, publishedAt, fingerprint);
+                docs.add(new MockScrapedDocument(docId, absPdfUrl, title, text, publishedAt));
                 prsStats[1]++;
             }
         } catch (Exception ex) {
-            // PRS parser is best-effort and should not block session reconciliation
             log.warn("PRS monthly PDF scrape failed", ex);
         }
         return docs;
     }
+
+    // UNSURE ABOUT THIS FUNCTION PURPOSE, REVIEW LATER
+    // private boolean isStrictMonthlyPolicyReviewPdf(Element link, String url, int
+    // year) {
+    // String text = link.text().toLowerCase();
+    // url = url.toLowerCase();
+    // String yearToken = String.valueOf(year);
+
+    // // For the demo, we are very lenient as long as it's a PDF and has the year
+    // return url.contains(yearToken) || text.contains(yearToken);
+    // }
 
     /*
      * Strict inclusion policy for PRS:
@@ -209,7 +248,8 @@ public class HybridGovDataCollector {
         }
     }
 
-    private Long persistDocument(long sessionId, String sourceUrl, String title, String text, OffsetDateTime publishedAt, String fingerprint) {
+    private Long persistDocument(long sessionId, String sourceUrl, String title, String text,
+            OffsetDateTime publishedAt, String fingerprint) {
         SessionDocumentEntity entity = new SessionDocumentEntity();
         entity.setSessionId(sessionId);
         entity.setSourceUrl(sourceUrl);
@@ -228,7 +268,8 @@ public class HybridGovDataCollector {
     private String fingerprint(String sourceUrl, String publishedAt, String title, String text) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest((sourceUrl + "|" + publishedAt + "|" + title + "|" + text).getBytes(StandardCharsets.UTF_8));
+            byte[] hash = md.digest(
+                    (sourceUrl + "|" + publishedAt + "|" + title + "|" + text).getBytes(StandardCharsets.UTF_8));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash).toLowerCase(Locale.ROOT);
         } catch (Exception e) {
             return sourceUrl + ":" + publishedAt + ":" + title.hashCode();

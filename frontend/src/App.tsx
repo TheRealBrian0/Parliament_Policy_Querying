@@ -45,6 +45,12 @@ const ASK_MUTATION = `
   }
 `;
 
+const SYNC_MUTATION = `
+  mutation {
+    triggerIngestion
+  }
+`;
+
 export default function App() {
   const [persona, setPersona] = useState(PERSONA_OPTIONS[5]!.value);
   const [question, setQuestion] = useState("");
@@ -53,6 +59,7 @@ export default function App() {
   const [result, setResult] = useState<AskResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
@@ -75,6 +82,19 @@ export default function App() {
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
+
+  async function onSync() {
+    setSyncing(true);
+    setError(null);
+    try {
+      await graphqlRequest(SYNC_MUTATION);
+      await loadStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function onAsk(e: React.FormEvent) {
     e.preventDefault();
@@ -103,8 +123,19 @@ export default function App() {
       </header>
 
       <section className="panel" aria-label="System status">
-        <h2>System status</h2>
-        {statusLoading && <p className="muted">Loading…</p>}
+        <div className="status-header">
+          <h2>System status</h2>
+          <button
+            type="button"
+            className="btn-sync"
+            onClick={() => void onSync()}
+            disabled={syncing || statusLoading}
+          >
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+        </div>
+
+        {statusLoading && !syncing && <p className="muted">Loading…</p>}
         {!statusLoading && status && (
           <ul className="status-list">
             <li>
@@ -120,22 +151,27 @@ export default function App() {
         )}
         {diag && (
           <div className="diag">
-            <h3>Ingestion (last run)</h3>
-            <p className="muted small">{diag.lastRunAt ?? "No collector run yet"}</p>
-            <ul className="status-list small">
-              <li>
-                RSS: checked {diag.rssFeedsChecked}, accepted {diag.rssAccepted}, rejected{" "}
-                {diag.rssRejected}
-              </li>
-              <li>
-                PRS PDF: checked {diag.prsPdfLinksChecked}, accepted {diag.prsPdfAccepted}, rejected{" "}
-                {diag.prsPdfRejected}
-              </li>
-              <li>Published (approx): {diag.totalPublished}</li>
-            </ul>
-            <button type="button" className="btn-secondary" onClick={() => void loadStatus()}>
-              Refresh status
-            </button>
+            <h3>Ingestion Diagnostics</h3>
+            <p className="muted small">
+              {diag.lastRunAt ? `Last run: ${new Date(diag.lastRunAt).toLocaleString()}` : "No collector run yet"}
+            </p>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <span className="stat-label">RSS Feeds</span>
+                <span className="stat-value">{diag.rssAccepted} / {diag.rssFeedsChecked}</span>
+                <div className="stat-bar">
+                   <div className="stat-progress" style={{ width: `${(diag.rssAccepted / (diag.rssFeedsChecked || 1)) * 100}%` }}></div>
+                </div>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">PRS PDFs</span>
+                <span className="stat-value">{diag.prsPdfAccepted} / {diag.prsPdfLinksChecked}</span>
+                <div className="stat-bar">
+                   <div className="stat-progress" style={{ width: `${(diag.prsPdfAccepted / (diag.prsPdfLinksChecked || 1)) * 100}%` }}></div>
+                </div>
+              </div>
+            </div>
+            <p className="total-published">Total Published: <strong>{diag.totalPublished}</strong></p>
           </div>
         )}
       </section>

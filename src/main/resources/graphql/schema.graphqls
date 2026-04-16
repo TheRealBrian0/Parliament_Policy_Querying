@@ -27,6 +27,11 @@ type Mutation {
   Sends a persona-aware question through the RAG pipeline and gets model-generated answer.
   """
   askQuestion(input: AskQuestionInput!): ChatResponse!
+
+  """
+  Manually triggers the ingestion pipeline reconciliation for the current year.
+  """
+  triggerIngestion: Boolean!
 }
 
 """
