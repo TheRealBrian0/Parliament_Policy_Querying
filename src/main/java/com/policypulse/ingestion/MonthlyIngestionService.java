@@ -23,18 +23,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Orchestrates a rolling 3-month window of ingested policy documents.
  *
- * <p>On startup and on the 1st of every month:
+ * <p>
+ * On startup and on the 1st of every month:
  * <ol>
- *   <li>Computes the 3-month window (from 2 months ago to the current month).</li>
- *   <li>Scrapes any months in that window not yet in the database.</li>
- *   <li>Evicts any months that fall outside the 3-month window.</li>
+ * <li>Computes the 24-month window (from 23 months ago to the current
+ * month).</li>
+ * <li>Scrapes any months in that window not yet in the database.</li>
+ * <li>Evicts any months that fall outside the 24-month window.</li>
  * </ol>
  */
 @Service
 public class MonthlyIngestionService {
-
+    // responsible for month context window and scrapper
     private static final int WINDOW_MONTHS = 24;
     private static final Logger log = LoggerFactory.getLogger(MonthlyIngestionService.class);
 
@@ -124,8 +125,7 @@ public class MonthlyIngestionService {
                     doc.sourceUrl(),
                     doc.title(),
                     doc.rawText(),
-                    doc.publishedAt()
-            ));
+                    doc.publishedAt()));
         }
 
         log.info("Month ingestion complete: {}-{}, documents published to Kafka: {}", year, month, docs.size());
@@ -136,7 +136,8 @@ public class MonthlyIngestionService {
         for (IngestedMonthEntity entity : all) {
             YearMonth ym = YearMonth.of(entity.getYear(), entity.getMonth());
             if (!targetWindow.contains(ym)) {
-                log.info("Evicting stale month: {}-{} (monthId={})", entity.getYear(), entity.getMonth(), entity.getId());
+                log.info("Evicting stale month: {}-{} (monthId={})", entity.getYear(), entity.getMonth(),
+                        entity.getId());
                 // Chunks cascade-delete via FK, but we delete explicitly for clarity
                 vectorIndexService.deleteByMonthId(entity.getId());
                 sessionChunkRepository.deleteByMonthId(entity.getId());

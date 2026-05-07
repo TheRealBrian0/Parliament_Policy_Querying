@@ -1,110 +1,108 @@
-# Parliament_Policy_Querying
-Langchain implementation for user based querying on parliament session discussions.
+# Policy Pulse: Indian Parliament Policy Querying (RAG)
 
-## 1. Project Overview
-**Name**: `policy-pulse-rag` (Frontend: `policy-pulse-ui`) 
-**Description**: A contextual, self-updating Retrieval-Augmented Generation (RAG) chatbot platform. It allows users to ask questions related to Indian government policies and get responses tailored to specific "personas" (e.g., Trade and Small Business, General Citizen). It continuously updates its knowledge base by scraping and ingesting policy-related data from official government RSS feeds and PDF reports (like PRS Legislative Research).
+Policy Pulse is a professional, self-updating Retrieval-Augmented Generation (RAG) platform. It allows users to ask natural-language questions about Indian government policies and receive accurate, persona-aware answers grounded in real legislative data.
 
----
-
-## 2. Technology Stack & Architecture
-
-### Backend: Spring Boot application (Java 21)
-- **Framework:** Spring Boot 3.3.5 (Web, Data JPA, Validation)
-- **API Engine:** Spring for GraphQL (Exposing `/graphql` endpoint)
-- **Message Broker integration:** Spring Kafka (using `policy-pulse-group` for decoupled document processing event topics like `session-data-scraped`)
-- **Database Engine:** MySQL 8.4 via `mysql-connector-j` with Flyway database migration (`flyway-mysql`, `flyway-core`).
-- **AI/LLM Library:** `langchain4j` and `langchain4j-ollama` (v0.35.0).
-- **Web Scraping/Parsing:** `rome` (RSS parsing), `jsoup` (HTML parsing), and `pdfbox` (PDF parsing).
-- **Build tool:** Maven (with `pom.xml` configured for Java 21).
-
-### Frontend: React Single Page Application (TypeScript)
-- **Build Tool:** Vite 5.4.8.
-- **Framework:** React 18.3.1.
-- **Testing:** Vitest and Testing Library.
-- **API Client:** Minimal custom GraphQL fetch client (`frontend/src/api/graphql.ts`).
-
-### Infrastructure: Docker Compose
-Provides a self-contained runtime environment comprising:
-1. **mysql** (`mysql:8.4`): Main relational database storing session data, metadata, and document pointers.
-2. **kafka** (`apache/kafka:3.9.2`): Message broker using KRaft mode (no Zookeeper) configured for local/host dev.
-3. **ollama** (`ollama/ollama:latest`): Local LLM inference server binding to `11434` with 6GB memory limit.
+The system maintains a **rolling 24-month window** of policy data, continuously ingesting from official RSS feeds and PRS Legislative Research reports.
 
 ---
 
-## 3. Deep Dive: Key Modules & Workflows
+## 1. Prerequisites (For a Fresh Machine)
 
-### A. Data Ingestion & Scraping (`com.policypulse.scrape.HybridGovDataCollector`)
-Responsible for automatically gathering Indian government policy data. Driven by a parliamentary "session" chronology, the system evaluates three sessions a year.
-- **RSS Feeds:** Reads RSS feed URLs defined in `src/main/resources/gov_dataset/rss.txt` (pointing to `services.india.gov.in` feeds across various categories). It utilizes Rome to parse standard RSS xml feeds.
-- **PRS India PDFs:** Scrapes the PRS Legislative Research Monthly Policy Review page via Jsoup. It strictly filters links looking for `.pdf` URLs that belong to `prsindia.org` and explicitly include the current year and the string "monthly policy review" to prevent downloading unrelated bills or committee reports. Uses Apache PDFBox to strip text from the PDF.
-- **Deduplication:** A secure fingerprint (SHA-256 hash or hashcode fallback) validates if a document is already ingested (built using the document URL, published date, title, and partial raw text).
-- **Text Filtering:** Utilizes an `EnglishTextFilter` to ensure non-English or corrupted entries do not pollute the RAG model vector space.
+Before running the project, ensure your machine has the following tools installed and verified.
 
-### B. Vector Processing and RAG (`com.policypulse.rag.*`)
-- **Embedding Generation:** Leverages Ollama integration using the `nomic-embed-text` embedding model to generate vectors from text chunks in `TextChunker`.
-- **Vector Store:** Currently using a simplified `InMemoryVectorIndexService` loaded at runtime for nearest neighbor (`EmbeddingMatch`) queries. 
-- **LLM Inference:** Integrates with `llama3:8b-instruct-q4_K_M` running on Ollama for conversational inferences (`OllamaChatModel`).
-- **Chat Prompt Engineering:** Uses strict persona-aware templating. The `RagChatService` embeds the scraped context and user's requested `Persona` (e.g., `INDUSTRY_AND_LOGISTICS`) and forces the LLM to restrict responses to the scraped data contexts. It explicitly instructs the model to mention uncertainty if context is weak. 
+### A. Java 21 SDK
+- **Download**: [Adoptium (Temurin)](https://adoptium.net/temurin/releases/?version=21) or [Azul Zulu](https://www.azul.com/downloads/?version=java-21-lts&package=jdk).
+- **Verification**: Run `java -version`. You should see `openjdk version "21.x.x"`.
 
-### C. The GraphQL API Layer (`src/main/resources/graphql/schema.graphqls`)
-The API defines three main queries and one mutation:
-1. **Query `systemStatus`**: Retrieves high-level state (current year, active sessions, vector context alignment year).
-2. **Query `sessions(year)`**: Gets metadata for chronological session cycles (SESSION_1, SESSION_2, etc).
-3. **Query `ingestionDiagnostics`**: Provides runtime counters for observability detailing RSS feeds and PRS PDFs checked, accepted, and rejected.
-4. **Mutation `askQuestion(input: AskQuestionInput!)`**: Consumes a `Persona` enum and a `question` string. Returns a `ChatResponse` containing the conversational `answer`, the specific knowledge base `sources` (chunk ids for transparency), and `sessionScope`.
+### B. Node.js (LTS) & npm
+- **Download**: [Node.js Official Site](https://nodejs.org/). Version 20.x or higher is recommended.
+- **Verification**: Run `node -v` and `npm -v`.
 
-### D. Data Entities & Chronology
-- The application conceptually tracks Indian parliamentary calendars using "Session" bounds defined in `application.yml`:
-  - `session1`: Feb 1
-  - `session2`: Jun 1
-  - `session3`: Oct 1
-- **Flyway Migrations** track tables for documents, sessions, and deduplication (see scripts under `resources/db/migration`).
+### C. Docker & Docker Desktop
+- **Download**: [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+- **Requirement**: Ensure the Docker daemon is running before starting the infrastructure.
 
 ---
 
-## 4. Frontend Application (`frontend/src/App.tsx`)
-- Provides a clean, minimalist web interface for interacting with the backend.
-- Displays dynamic charts/statuses (like "Ingestion (last run)").
-- Exposes a form mapping to the `askQuestion` GraphQL mutation. Users select their domain "Persona" via a dropdown and query the LLM. 
-- Results display the LLM's answer alongside the exact chunk references it utilized, providing source transparency.
+## 2. Technology Stack
 
-## 5. Potential Extensibility & Future Work
-- **Vector Store Replacement:** The current `InMemoryVectorIndexService` is meant for early phases. Replacing it with Milvus, pgvector, or ChromaDB for persistent vector persistence.
-- **Kafka Consumers:** The `Kafka` broker setup implies that scraping (`session-data-scraped` topic) and embedding processes will be deeply decoupled into producer/consumer services in the future.
-- **UI Expansion:** A graph dashboard showing metrics over time based on the GraphQL `ingestionDiagnostics`.
+### Backend: Spring Boot (Java 21)
+- **Framework**: Spring Boot 3.3.5
+- **RAG Implementation**: LangChain4j (v0.35.0)
+- **Database**: MySQL 8.4 (Persistence) & ChromaDB 0.4.24 (Vector Store)
+- **Message Broker**: Apache Kafka 3.9.2 (Asynchronous data ingestion)
+- **Parsing**: Apache PDFBox (PDFs) & Rome (RSS feeds)
+
+### Frontend: React (TypeScript)
+- **Build Tool**: Vite 5.4.8
+- **Routing**: React Router 7
+- **Styling**: Modern CSS with Glassmorphism and Animations
+- **Testing**: Vitest & React Testing Library
 
 ---
 
-## 6. How to Run the Program
+## 3. Infrastructure Setup (Docker)
 
-This project requires infrastructure (MySQL, Kafka, Ollama) alongside the backend and frontend apps. You will need three separate terminal windows to run everything.
+All auxiliary services are managed via Docker Compose.
 
-### Step 1: Start the Infrastructure
-Open a terminal in your project root and run Docker Compose to spin up the MySQL database, Kafka broker, and Ollama server in the background:
-```powershell
-docker-compose up -d
-```
+1.  **Start the Services**:
+    ```powershell
+    docker-compose up -d
+    ```
+    This spins up:
+    - **MySQL** (Port 3306): Stores document metadata.
+    - **Kafka** (Port 9092): Handles ingestion events.
+    - **ChromaDB** (Port 8000): Stores vector embeddings.
+    - **Ollama** (Port 11435): Local LLM inference.
+    - **Kafka UI** (Port 8081): Monitor Kafka topics.
 
-### Step 2: Pull the AI Models (First time only)
-Ollama containers do not start with built-in models. You need to pull the embedding and chat models. Run these commands to download them:
-```powershell
-docker exec -it policy-pulse-ollama ollama pull nomic-embed-text
-docker exec -it policy-pulse-ollama ollama pull llama3.1:8b
-```
+2.  **Pull AI Models** (Required for first run):
+    Ollama requires the models to be downloaded into the container volume.
+    ```powershell
+    docker exec -it policy-pulse-ollama ollama pull nomic-embed-text
+    docker exec -it policy-pulse-ollama ollama pull llama3.1:8b
+    ```
 
-### Step 3: Run the Spring Boot Backend
-In your project root, use the Maven wrapper to fire up the Java backend. This will automatically run the Flyway database migrations and connect to Kafka, MySQL, and Ollama:
+---
+
+## 4. Running the Application
+
+### Step 1: Start the Backend
+Open a terminal in the project root. The project uses the Maven wrapper (`mvnw`), so you don't need Maven pre-installed.
 ```powershell
 .\mvnw.cmd spring-boot:run
 ```
+*The backend will automatically perform Flyway migrations and start the 24-month rolling ingestion cycle.*
 
-### Step 4: Run the React Frontend
-Open a new terminal window, navigate into your `frontend` directory, install your node dependencies, and start the development server:
+### Step 2: Start the Frontend
+Open a second terminal, navigate to the `frontend` folder, and start the development server.
 ```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Once Vite finishes compiling, it will give you a local URL (usually `http://localhost:5173`) where you can view your Policy Pulse UI and start testing out the queries.
+### Step 3: Access the UI
+Open your browser to the URL provided by Vite (usually `http://localhost:5173` or `http://localhost:5174`).
+
+- **Home Page**: Overview of the project and technical RAG pipeline.
+- **Chatbot Page**: Select a persona and ask questions about policy.
+
+---
+
+## 5. Maintenance & Observability
+
+- **Database**: Connect to MySQL at `127.0.0.1:3306` using `root` / `root_pass`.
+- **Kafka Monitoring**: Visit `http://localhost:8081` to see real-time message flow.
+- **24-Month Window**: The system automatically evicts documents older than 24 months and scrapes missing data on the 1st of every month.
+
+---
+
+## 6. Troubleshooting
+
+- **CORS Errors**: Ensure the backend is running and the `application.yml` matches your frontend origin.
+- **Ollama Connection**: If the LLM doesn't respond, verify port `11435` is accessible and the models are pulled.
+- **ChromaDB Errors**: Ensure the `chroma_data` volume is created and persistent.
+
+---
+**GitHub**: [TheRealBrian0](https://github.com/TheRealBrian0) | **LeetCode**: [Warlocked](https://leetcode.com/u/Warlocked/)

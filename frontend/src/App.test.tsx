@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 
 describe("App", () => {
@@ -32,11 +33,23 @@ describe("App", () => {
     );
   });
 
-  it("loads system status and shows year", async () => {
-    render(<App />);
+  it("renders home page with Policy Pulse heading", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+    expect(screen.getAllByText(/Policy Pulse/)[0]).toBeInTheDocument();
+  });
+
+  it("renders chatbot page with status", async () => {
+    render(
+      <MemoryRouter initialEntries={["/chatbot"]}>
+        <App />
+      </MemoryRouter>
+    );
     await waitFor(() => {
       expect(screen.getByText(/2026/)).toBeInTheDocument();
     });
-    expect(screen.getByRole("heading", { name: /Policy Pulse RAG/i })).toBeInTheDocument();
   });
 });
