@@ -35,7 +35,7 @@ import java.util.List;
 @Service
 public class MonthlyIngestionService {
 
-    private static final int WINDOW_MONTHS = 3;
+    private static final int WINDOW_MONTHS = 24;
     private static final Logger log = LoggerFactory.getLogger(MonthlyIngestionService.class);
 
     private final IngestedMonthRepository ingestedMonthRepository;
