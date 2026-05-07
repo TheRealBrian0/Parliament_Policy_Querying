@@ -1,8 +1,8 @@
 package com.policypulse.rag;
 
 import com.policypulse.domain.Persona;
-import com.policypulse.domain.SessionType;
 import com.policypulse.graphql.dto.ChatResponseView;
+import com.policypulse.rag.VectorIndexService;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -16,11 +16,11 @@ import java.util.stream.Collectors;
 @Service
 public class RagChatService {
 
-    private final InMemoryVectorIndexService vectorIndexService;
+    private final VectorIndexService vectorIndexService;
     private final OllamaChatModel chatModel;
     private final dev.langchain4j.memory.ChatMemory chatMemory = dev.langchain4j.memory.chat.MessageWindowChatMemory.withMaxMessages(10);
 
-    public RagChatService(InMemoryVectorIndexService vectorIndexService, OllamaChatModel chatModel) {
+    public RagChatService(VectorIndexService vectorIndexService, OllamaChatModel chatModel) {
         this.vectorIndexService = vectorIndexService;
         this.chatModel = chatModel;
     }
@@ -65,6 +65,6 @@ public class RagChatService {
                 .map(m -> m.embedded().metadata().getString("documentId") + ":" + m.embedded().metadata().getString("chunkIndex"))
                 .toList();
 
-        return new ChatResponseView(answer.text(), sources, List.of(SessionType.SESSION_1, SessionType.SESSION_2, SessionType.SESSION_3));
+        return new ChatResponseView(answer.text(), sources);
     }
 }

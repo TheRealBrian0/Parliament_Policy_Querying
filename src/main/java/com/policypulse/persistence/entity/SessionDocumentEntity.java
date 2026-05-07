@@ -17,8 +17,8 @@ public class SessionDocumentEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "session_id", nullable = false)
-    private Long sessionId;
+    @Column(name = "month_id", nullable = false)
+    private Long monthId;
 
     @Column(name = "source_url", length = 1024)
     private String sourceUrl;
@@ -42,8 +42,12 @@ public class SessionDocumentEntity {
         return id;
     }
 
-    public void setSessionId(Long sessionId) {
-        this.sessionId = sessionId;
+    public Long getMonthId() {
+        return monthId;
+    }
+
+    public void setMonthId(Long monthId) {
+        this.monthId = monthId;
     }
 
     public void setSourceUrl(String sourceUrl) {

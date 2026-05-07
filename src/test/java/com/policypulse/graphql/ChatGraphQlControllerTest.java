@@ -1,11 +1,9 @@
 package com.policypulse.graphql;
 
-import com.policypulse.chronology.ChronologyService;
 import com.policypulse.domain.Persona;
-import com.policypulse.domain.SessionType;
 import com.policypulse.graphql.controller.ChatGraphQlController;
 import com.policypulse.graphql.dto.ChatResponseView;
-import com.policypulse.graphql.dto.SystemStatusView;
+import com.policypulse.ingestion.MonthlyIngestionService;
 import com.policypulse.rag.RagChatService;
 import com.policypulse.scrape.HybridGovDataCollector;
 import com.policypulse.scrape.IngestionDiagnosticsSnapshot;
@@ -29,7 +27,7 @@ class ChatGraphQlControllerTest {
     GraphQlTester graphQlTester;
 
     @MockBean
-    ChronologyService chronologyService;
+    MonthlyIngestionService monthlyIngestionService;
 
     @MockBean
     HybridGovDataCollector collector;
@@ -39,21 +37,19 @@ class ChatGraphQlControllerTest {
 
     @Test
     void systemStatusQueryReturnsCurrentFields() {
-        when(chronologyService.currentStatus()).thenReturn(
-                new SystemStatusView(2026, List.of(SessionType.SESSION_1), 2026, null)
-        );
+        when(monthlyIngestionService.listIngestedMonths()).thenReturn(List.of());
+        when(monthlyIngestionService.currentStatus()).thenReturn("0 months in window");
 
-        graphQlTester.document("{ systemStatus { currentYear activeSessions vectorContextYear } }")
+        graphQlTester.document("{ systemStatus { currentYear currentMonth ingestedMonthCount statusMessage } }")
                 .execute()
-                .path("systemStatus.currentYear").entity(Integer.class).isEqualTo(2026)
-                .path("systemStatus.activeSessions[0]").entity(String.class).isEqualTo("SESSION_1")
-                .path("systemStatus.vectorContextYear").entity(Integer.class).isEqualTo(2026);
+                .path("systemStatus.ingestedMonthCount").entity(Integer.class).isEqualTo(0)
+                .path("systemStatus.statusMessage").entity(String.class).isEqualTo("0 months in window");
     }
 
     @Test
     void askQuestionMutationDelegatesToRagService() {
         when(ragChatService.ask(eq(Persona.GENERAL_CITIZEN), any()))
-                .thenReturn(new ChatResponseView("answer", List.of("1:0"), List.of(SessionType.SESSION_1)));
+                .thenReturn(new ChatResponseView("answer", List.of("1:0")));
         when(collector.getLastDiagnostics()).thenReturn(new IngestionDiagnosticsSnapshot(
                 OffsetDateTime.now(), 12, 4, 8, 3, 3, 0
         ));

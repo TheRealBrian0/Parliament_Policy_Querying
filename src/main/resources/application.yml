@@ -30,7 +30,7 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: com.policypulse.*
-        spring.json.value.default.type: com.policypulse.kafka.event.SessionScrapedEvent
+        spring.json.value.default.type: com.policypulse.kafka.event.DocumentScrapedEvent
         spring.json.use.type.headers: false
 
 server:
@@ -39,15 +39,9 @@ server:
 app:
   topics:
     session-data-scraped: session-data-scraped
-  chronology:
-    session1-month: 2
-    session1-day: 1
-    session2-month: 6
-    session2-day: 1
-    session3-month: 10
-    session3-day: 1
-    reconcile-cron: "0 */10 * * * *"
+  chromadb:
+    url: http://localhost:8000
   ollama:
-    base-url: http://localhost:11434
-    chat-model: llama3:8b-instruct-q4_K_M
+    base-url: http://localhost:11435
+    chat-model: llama3.1:8b
     embedding-model: nomic-embed-text:latest

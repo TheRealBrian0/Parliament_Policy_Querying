@@ -15,8 +15,8 @@ public class SessionChunkEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "session_id", nullable = false)
-    private Long sessionId;
+    @Column(name = "month_id", nullable = false)
+    private Long monthId;
 
     @Column(name = "document_id", nullable = false)
     private Long documentId;
@@ -30,47 +30,47 @@ public class SessionChunkEntity {
     @Column(name = "vector_ref", length = 255)
     private String vectorRef;
 
-    public void setSessionId(Long sessionId) {
-        this.sessionId = sessionId;
-    }
-
-    public void setDocumentId(Long documentId) {
-        this.documentId = documentId;
-    }
-
-    public void setChunkIndex(int chunkIndex) {
-        this.chunkIndex = chunkIndex;
-    }
-
-    public void setChunkText(String chunkText) {
-        this.chunkText = chunkText;
-    }
-
-    public void setVectorRef(String vectorRef) {
-        this.vectorRef = vectorRef;
-    }
-
     public Long getId() {
         return id;
     }
 
-    public Long getSessionId() {
-        return sessionId;
+    public Long getMonthId() {
+        return monthId;
+    }
+
+    public void setMonthId(Long monthId) {
+        this.monthId = monthId;
     }
 
     public Long getDocumentId() {
         return documentId;
     }
 
+    public void setDocumentId(Long documentId) {
+        this.documentId = documentId;
+    }
+
     public int getChunkIndex() {
         return chunkIndex;
+    }
+
+    public void setChunkIndex(int chunkIndex) {
+        this.chunkIndex = chunkIndex;
     }
 
     public String getChunkText() {
         return chunkText;
     }
 
+    public void setChunkText(String chunkText) {
+        this.chunkText = chunkText;
+    }
+
     public String getVectorRef() {
         return vectorRef;
+    }
+
+    public void setVectorRef(String vectorRef) {
+        this.vectorRef = vectorRef;
     }
 }

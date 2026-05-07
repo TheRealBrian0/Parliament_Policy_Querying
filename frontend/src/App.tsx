@@ -4,8 +4,9 @@ import { PERSONA_OPTIONS } from "./personas";
 
 type SystemStatus = {
   currentYear: number;
-  activeSessions: string[];
-  vectorContextYear: number | null;
+  currentMonth: number;
+  ingestedMonthCount: number;
+  statusMessage: string;
 };
 
 type IngestionDiagnostics = {
@@ -22,12 +23,11 @@ type IngestionDiagnostics = {
 type AskResult = {
   answer: string;
   sources: string[];
-  sessionScope: string[];
 };
 
 const STATUS_QUERY = `
   query {
-    systemStatus { currentYear activeSessions vectorContextYear }
+    systemStatus { currentYear currentMonth ingestedMonthCount statusMessage }
     ingestionDiagnostics {
       lastRunAt rssFeedsChecked rssAccepted rssRejected
       prsPdfLinksChecked prsPdfAccepted prsPdfRejected totalPublished
@@ -40,7 +40,6 @@ const ASK_MUTATION = `
     askQuestion(input: { persona: $persona, question: $question }) {
       answer
       sources
-      sessionScope
     }
   }
 `;
@@ -142,10 +141,13 @@ export default function App() {
               <strong>Year:</strong> {status.currentYear}
             </li>
             <li>
-              <strong>Active sessions:</strong> {status.activeSessions.join(", ") || "—"}
+              <strong>Month:</strong> {status.currentMonth}
             </li>
             <li>
-              <strong>Vector context year:</strong> {status.vectorContextYear ?? "—"}
+              <strong>Ingested Months:</strong> {status.ingestedMonthCount}
+            </li>
+            <li>
+              <strong>Status:</strong> {status.statusMessage}
             </li>
           </ul>
         )}

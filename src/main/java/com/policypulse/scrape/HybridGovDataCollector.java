@@ -1,6 +1,5 @@
 package com.policypulse.scrape;
 
-import com.policypulse.domain.SessionType;
 import com.policypulse.persistence.entity.SessionDocumentEntity;
 import com.policypulse.persistence.repository.SessionDocumentRepository;
 import com.rometools.rome.feed.synd.SyndEntry;
@@ -26,6 +25,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.time.Month;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -38,6 +38,7 @@ public class HybridGovDataCollector {
 
     private static final String PRS_MONTHLY_URL = "https://prsindia.org/policy/monthly-policy-review";
     private static final Logger log = LoggerFactory.getLogger(HybridGovDataCollector.class);
+
     private final ResourceLoader resourceLoader;
     private final SessionDocumentRepository sessionDocumentRepository;
     private final EnglishTextFilter englishTextFilter;
@@ -53,23 +54,29 @@ public class HybridGovDataCollector {
         this.englishTextFilter = englishTextFilter;
     }
 
-    public List<MockScrapedDocument> collectForSession(int year, SessionType sessionType, long sessionId) {
-        List<MockScrapedDocument> merged = new ArrayList<>();
-        int[] rssStats = new int[] { 0, 0, 0 }; // checked, accepted, rejected
-        int[] prsStats = new int[] { 0, 0, 0 }; // checked, accepted, rejected
-        merged.addAll(collectRssDocuments(year, sessionId, rssStats));
-        merged.addAll(collectPrsPdfDocuments(year, sessionId, prsStats));
+    /**
+     * Collect all available documents for a specific calendar month.
+     * Sources: PRS India Monthly Policy Review PDFs + RSS feeds.
+     */
+    public List<ScrapedDocument> collectForMonth(int year, int month, long monthId) {
+        List<ScrapedDocument> merged = new ArrayList<>();
+        int[] rssStats = new int[]{0, 0, 0};  // checked, accepted, rejected
+        int[] prsStats = new int[]{0, 0, 0};
+
+        merged.addAll(collectRssDocuments(year, month, monthId, rssStats));
+        merged.addAll(collectPrsPdfDocuments(year, month, monthId, prsStats));
+
         lastDiagnostics = new IngestionDiagnosticsSnapshot(
                 OffsetDateTime.now(ZoneOffset.UTC),
-                rssStats[0],
-                rssStats[1],
-                rssStats[2],
-                prsStats[0],
-                prsStats[1],
-                prsStats[2]);
-        log.info(
-                "Ingestion summary: rssFeedsChecked={}, rssAccepted={}, rssRejected={}, prsChecked={}, prsAccepted={}, prsRejected={}",
-                rssStats[0], rssStats[1], rssStats[2], prsStats[0], prsStats[1], prsStats[2]);
+                rssStats[0], rssStats[1], rssStats[2],
+                prsStats[0], prsStats[1], prsStats[2]);
+
+        log.info("Ingestion summary [year={} month={}]: rssChecked={}, rssAccepted={}, rssRejected={}, " +
+                        "prsChecked={}, prsAccepted={}, prsRejected={}",
+                year, month,
+                rssStats[0], rssStats[1], rssStats[2],
+                prsStats[0], prsStats[1], prsStats[2]);
+
         return merged;
     }
 
@@ -77,16 +84,24 @@ public class HybridGovDataCollector {
         return lastDiagnostics;
     }
 
-    private List<MockScrapedDocument> collectRssDocuments(int year, long sessionId, int[] rssStats) {
-        List<MockScrapedDocument> docs = new ArrayList<>();
+    // ------------------------------------------------------------------
+    // RSS ingestion — scoped to the specific year + month
+    // ------------------------------------------------------------------
+
+    private List<ScrapedDocument> collectRssDocuments(int year, int month, long monthId, int[] rssStats) {
+        List<ScrapedDocument> docs = new ArrayList<>();
         for (String feedUrl : readRssLinks()) {
             rssStats[0]++;
             try (XmlReader reader = new XmlReader(URI.create(feedUrl).toURL())) {
                 SyndFeed feed = new SyndFeedInput().build(reader);
                 for (SyndEntry entry : feed.getEntries()) {
                     OffsetDateTime publishedAt = toOffsetDateTime(
-                            entry.getPublishedDate() != null ? entry.getPublishedDate().toInstant() : Instant.now());
-                    if (publishedAt.getYear() != year) {
+                            entry.getPublishedDate() != null
+                                    ? entry.getPublishedDate().toInstant()
+                                    : Instant.now());
+
+                    // Only accept articles from the exact target year+month
+                    if (publishedAt.getYear() != year || publishedAt.getMonthValue() != month) {
                         rssStats[2]++;
                         continue;
                     }
@@ -102,50 +117,42 @@ public class HybridGovDataCollector {
                         rssStats[2]++;
                         continue;
                     }
-                    Long docId = persistDocument(sessionId, url, title, text, publishedAt, fingerprint);
-                    docs.add(new MockScrapedDocument(docId, url, title, text, publishedAt));
+                    Long docId = persistDocument(monthId, url, title, text, publishedAt, fingerprint);
+                    docs.add(new ScrapedDocument(docId, url, title, text, publishedAt));
                     rssStats[1]++;
                 }
             } catch (Exception ex) {
-                // keep collector resilient for demo runs even if one feed endpoint fails
                 log.warn("RSS feed fetch failed: {}", feedUrl, ex);
             }
         }
         return docs;
     }
 
-    private List<MockScrapedDocument> collectPrsPdfDocuments(int year, long sessionId, int[] prsStats) {
-        List<MockScrapedDocument> docs = new ArrayList<>();
+    // ------------------------------------------------------------------
+    // PRS India PDF ingestion — scoped to the specific year + month
+    // ------------------------------------------------------------------
+
+    private List<ScrapedDocument> collectPrsPdfDocuments(int year, int month, long monthId, int[] prsStats) {
+        List<ScrapedDocument> docs = new ArrayList<>();
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(PRS_MONTHLY_URL))
                     .header("User-Agent",
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                                    "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
                     .GET()
                     .build();
             String html = httpClient.send(req, HttpResponse.BodyHandlers.ofString()).body();
             Document page = Jsoup.parse(html, PRS_MONTHLY_URL);
 
-            // We check both current and previous year to ensure we have context
-            List<Integer> targetYears = List.of(year, year - 1);
-
             for (Element link : page.select("a[href]")) {
-                String pdfUrl = link.absUrl("href").toLowerCase();
+                String pdfUrl = link.absUrl("href").toLowerCase(Locale.ROOT);
                 if (!pdfUrl.endsWith(".pdf") && !pdfUrl.contains(".pdf?")) {
                     continue;
                 }
-
                 prsStats[0]++;
                 String absPdfUrl = link.absUrl("href");
 
-                Integer matchedYear = null;
-                for (int y : targetYears) {
-                    if (isStrictMonthlyPolicyReviewPdf(link, absPdfUrl, y)) {
-                        matchedYear = y;
-                        break;
-                    }
-                }
-
-                if (matchedYear == null) {
+                if (!isMonthlyPolicyReviewPdf(link, absPdfUrl, year, month)) {
                     prsStats[2]++;
                     continue;
                 }
@@ -159,67 +166,59 @@ public class HybridGovDataCollector {
                 OffsetDateTime publishedAt = OffsetDateTime.now(ZoneOffset.UTC);
                 String title = link.text().trim();
                 if (title.isBlank() || title.equalsIgnoreCase("Download") || title.equalsIgnoreCase("Read More")) {
-                    title = "PRS Monthly Policy Review - " + matchedYear + " (Source: "
-                            + (absPdfUrl.contains("march") ? "March" : "Recent") + ")";
+                    title = "PRS Monthly Policy Review - "
+                            + Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)
+                            + " " + year;
                 }
 
-                String fingerprint = fingerprint(absPdfUrl, publishedAt.toLocalDate().toString(), title, text);
+                String fingerprint = fingerprint(absPdfUrl, year + "-" + month, title, text);
                 if (sessionDocumentRepository.existsByFingerprint(fingerprint)) {
                     prsStats[2]++;
                     continue;
                 }
-                Long docId = persistDocument(sessionId, absPdfUrl, title, text, publishedAt, fingerprint);
-                docs.add(new MockScrapedDocument(docId, absPdfUrl, title, text, publishedAt));
+                Long docId = persistDocument(monthId, absPdfUrl, title, text, publishedAt, fingerprint);
+                docs.add(new ScrapedDocument(docId, absPdfUrl, title, text, publishedAt));
                 prsStats[1]++;
             }
         } catch (Exception ex) {
-            log.warn("PRS monthly PDF scrape failed", ex);
+            log.warn("PRS monthly PDF scrape failed for year={} month={}", year, month, ex);
         }
         return docs;
     }
 
-    // UNSURE ABOUT THIS FUNCTION PURPOSE, REVIEW LATER
-    // private boolean isStrictMonthlyPolicyReviewPdf(Element link, String url, int
-    // year) {
-    // String text = link.text().toLowerCase();
-    // url = url.toLowerCase();
-    // String yearToken = String.valueOf(year);
-
-    // // For the demo, we are very lenient as long as it's a PDF and has the year
-    // return url.contains(yearToken) || text.contains(yearToken);
-    // }
-
-    /*
-     * Strict inclusion policy for PRS:
-     * - only prsindia.org PDF links
-     * - year must appear in URL/text
-     * - anchor text OR URL must explicitly mention monthly policy review
-     * This prevents committee reports or bills from being ingested.
+    /**
+     * Strict matching for PRS Monthly Policy Review PDFs.
+     * The URL must be from prsindia.org, must be a PDF, must contain the year,
+     * and must contain the target month name (or abbreviation) to pin it to a specific month.
      */
-    private boolean isStrictMonthlyPolicyReviewPdf(Element link, String pdfUrl, int year) {
-        if (pdfUrl.isBlank()) {
-            return false;
-        }
-        String url = pdfUrl.toLowerCase(Locale.ROOT);
+    private boolean isMonthlyPolicyReviewPdf(Element link, String pdfUrl, int year, int month) {
+        if (pdfUrl.isBlank()) return false;
+        String url  = pdfUrl.toLowerCase(Locale.ROOT);
         String text = link.text().toLowerCase(Locale.ROOT);
-        String yearToken = String.valueOf(year);
+        String yearToken  = String.valueOf(year);
+        String monthFull  = Month.of(month).getDisplayName(java.time.format.TextStyle.FULL,  java.util.Locale.ENGLISH).toLowerCase(Locale.ROOT);
+        String monthShort = Month.of(month).getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH).toLowerCase(Locale.ROOT);
 
-        if (!url.contains("prsindia.org")) {
-            return false;
-        }
-        if (!(url.contains(".pdf"))) {
-            return false;
-        }
-        if (!(url.contains(yearToken) || text.contains(yearToken))) {
-            return false;
-        }
+        if (!url.contains("prsindia.org")) return false;
+        if (!url.contains(".pdf"))        return false;
 
-        boolean monthlyPolicyInText = text.contains("monthly policy review");
-        boolean monthlyPolicyInUrl = url.contains("monthly-policy-review")
+        // Year must appear somewhere
+        if (!url.contains(yearToken) && !text.contains(yearToken)) return false;
+
+        // Must explicitly mention "monthly policy review"
+        boolean isMPR = text.contains("monthly policy review")
+                || url.contains("monthly-policy-review")
                 || (url.contains("monthly") && url.contains("policy") && url.contains("review"));
+        if (!isMPR) return false;
 
-        return monthlyPolicyInText || monthlyPolicyInUrl;
+        // Month must appear in URL or anchor text
+        return url.contains(monthFull) || url.contains(monthShort)
+                || text.contains(monthFull) || text.contains(monthShort);
     }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
 
     private List<String> readRssLinks() {
         try {
@@ -230,6 +229,7 @@ public class HybridGovDataCollector {
                     .filter(line -> !line.isBlank())
                     .toList();
         } catch (Exception e) {
+            log.warn("Could not read RSS feed list", e);
             return List.of();
         }
     }
@@ -248,10 +248,10 @@ public class HybridGovDataCollector {
         }
     }
 
-    private Long persistDocument(long sessionId, String sourceUrl, String title, String text,
-            OffsetDateTime publishedAt, String fingerprint) {
+    private Long persistDocument(long monthId, String sourceUrl, String title, String text,
+                                 OffsetDateTime publishedAt, String fingerprint) {
         SessionDocumentEntity entity = new SessionDocumentEntity();
-        entity.setSessionId(sessionId);
+        entity.setMonthId(monthId);
         entity.setSourceUrl(sourceUrl);
         entity.setTitle(title);
         entity.setRawText(text);
@@ -269,7 +269,8 @@ public class HybridGovDataCollector {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(
-                    (sourceUrl + "|" + publishedAt + "|" + title + "|" + text).getBytes(StandardCharsets.UTF_8));
+                    (sourceUrl + "|" + publishedAt + "|" + title + "|" + text)
+                            .getBytes(StandardCharsets.UTF_8));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash).toLowerCase(Locale.ROOT);
         } catch (Exception e) {
             return sourceUrl + ":" + publishedAt + ":" + title.hashCode();

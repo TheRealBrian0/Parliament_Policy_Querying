@@ -12,8 +12,9 @@ describe("App", () => {
           data: {
             systemStatus: {
               currentYear: 2026,
-              activeSessions: ["SESSION_1"],
-              vectorContextYear: 2026,
+              currentMonth: 5,
+              ingestedMonthCount: 3,
+              statusMessage: "3 months in window",
             },
             ingestionDiagnostics: {
               lastRunAt: "2026-04-10T12:00:00Z",

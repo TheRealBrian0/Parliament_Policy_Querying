@@ -1,17 +1,16 @@
 """
-Top-level GraphQL query operations for read APIs.
-In later phases these resolvers will read from JPA + Vector context status services.
+Top-level GraphQL query operations.
 """
 type Query {
   """
-  Returns active ingestion/runtime status for the chatbot platform.
+  Returns system status: current year/month and ingestion window summary.
   """
   systemStatus: SystemStatus!
 
   """
-  Returns all configured sessions for a given year (typically 3 parliamentary sessions).
+  Lists all months currently held in the rolling 24-month window.
   """
-  sessions(year: Int!): [Session!]!
+  ingestedMonths: [MonthStatus!]!
 
   """
   Returns last ingestion diagnostics counters for RSS and PRS collectors.
@@ -20,7 +19,7 @@ type Query {
 }
 
 """
-Top-level GraphQL mutation operations for write/inference APIs.
+Top-level GraphQL mutation operations.
 """
 type Mutation {
   """
@@ -29,35 +28,32 @@ type Mutation {
   askQuestion(input: AskQuestionInput!): ChatResponse!
 
   """
-  Manually triggers the ingestion pipeline reconciliation for the current year.
+  Manually triggers the rolling 24-month window reconciliation.
   """
   triggerIngestion: Boolean!
 }
 
 """
-System-level operational health and chronology data shown in admin dashboards.
+System-level operational health.
 """
 type SystemStatus {
   currentYear: Int!
-  activeSessions: [SessionType!]!
-  vectorContextYear: Int
-  lastIngestionAt: String
+  currentMonth: Int!
+  ingestedMonthCount: Int!
+  statusMessage: String!
 }
 
 """
-Parliamentary session metadata tracked for chronology and scraping orchestration.
+Represents a single month that has been ingested into the system.
 """
-type Session {
-  id: ID!
+type MonthStatus {
   year: Int!
-  sessionType: SessionType!
-  status: SessionStatus!
-  scrapeDate: String!
-  activatedAt: String
+  month: Int!
+  ingestedAt: String!
 }
 
 """
-End-user domain profile used for contextualized response style.
+End-user domain profile for contextualized response style.
 """
 enum Persona {
   TRADE_AND_SMALL_BUSINESS
@@ -66,25 +62,6 @@ enum Persona {
   PUBLIC_AND_COMMUNITY
   STUDENT_AND_EDUCATOR
   GENERAL_CITIZEN
-}
-
-"""
-Three session windows supported by chronology engine each year.
-"""
-enum SessionType {
-  SESSION_1
-  SESSION_2
-  SESSION_3
-}
-
-"""
-Lifecycle state of session ingestion.
-"""
-enum SessionStatus {
-  SCHEDULED
-  SCRAPED
-  EMBEDDED
-  ACTIVE
 }
 
 """
@@ -101,11 +78,10 @@ Chatbot response payload including source chunk IDs for transparency.
 type ChatResponse {
   answer: String!
   sources: [String!]!
-  sessionScope: [SessionType!]!
 }
 
 """
-Runtime counters for ingestion observability during demos and operations.
+Runtime counters for ingestion observability.
 """
 type IngestionDiagnostics {
   lastRunAt: String
