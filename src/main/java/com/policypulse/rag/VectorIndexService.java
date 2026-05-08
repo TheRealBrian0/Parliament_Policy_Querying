@@ -31,6 +31,11 @@ public class VectorIndexService {
     private final RestTemplate restTemplate = new RestTemplate();
     private static final String COLLECTION_NAME = "policy_pulse";
 
+    // Improvement #3 — cache the collection UUID so we only call
+    // GET /api/v1/collections/{name} once per JVM lifetime instead of
+    // once per eviction run.
+    private volatile String cachedCollectionId;
+
     public VectorIndexService(
             OllamaEmbeddingModel embeddingModel,
             @Value("${app.chromadb.url}") String chromaUrl) {
@@ -72,12 +77,7 @@ public class VectorIndexService {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<String> request = new HttpEntity<>(payload, headers);
-            // In modern Chroma versions, you first need to get the collection ID, or you can delete via the tenant/database endpoints.
-            // Using langchain4j, the collection might be created dynamically.
-            // Let's use the standard Chroma delete endpoint for the collection name directly if possible, or fallback.
-            // The endpoint is typically POST /api/v1/collections/{collection_id}/delete
-            // We need to fetch collection ID first.
-            String collectionId = getCollectionId(COLLECTION_NAME);
+            String collectionId = resolveCollectionId();
             if (collectionId != null) {
                 restTemplate.postForEntity(chromaUrl + "/api/v1/collections/" + collectionId + "/delete", request, String.class);
                 log.info("Deleted vectors for monthId: {} from ChromaDB", monthId);
@@ -87,6 +87,14 @@ public class VectorIndexService {
         } catch (Exception e) {
             log.error("Failed to delete vectors for monthId: {}", monthId, e);
         }
+    }
+
+    /** Returns the cached collection UUID, fetching it from ChromaDB on first call. */
+    private String resolveCollectionId() {
+        if (cachedCollectionId == null) {
+            cachedCollectionId = getCollectionId(COLLECTION_NAME);
+        }
+        return cachedCollectionId;
     }
 
     private String getCollectionId(String collectionName) {

@@ -11,6 +11,9 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
     open-in-view: false
   flyway:
     enabled: true

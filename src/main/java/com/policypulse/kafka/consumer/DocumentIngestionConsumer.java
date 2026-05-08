@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -34,9 +35,20 @@ public class DocumentIngestionConsumer {
     @Transactional
     public void onDocumentScraped(DocumentScrapedEvent event) {
         List<String> chunks = textChunker.chunk(event.rawText());
-        int stored = 0;
+
+        // Improvement #1 — one SELECT per document instead of one per chunk.
+        // On the normal (first-time) ingest path there are zero duplicate chunks,
+        // so we skip N per-chunk existence checks entirely.
+        boolean documentAlreadySeen = sessionChunkRepository.existsByDocumentId(event.documentId());
+
+        List<SessionChunkEntity> toSave = new ArrayList<>(chunks.size());
+        int skipped = 0;
+
         for (int i = 0; i < chunks.size(); i++) {
-            if (sessionChunkRepository.existsByDocumentIdAndChunkIndex(event.documentId(), i)) {
+            // On re-delivery (Kafka at-least-once), fall back to the fine-grained check.
+            if (documentAlreadySeen &&
+                    sessionChunkRepository.existsByDocumentIdAndChunkIndex(event.documentId(), i)) {
+                skipped++;
                 continue;
             }
             String vectorRef = vectorIndexService.add(event.monthId(), event.documentId(), i, chunks.get(i));
@@ -46,10 +58,19 @@ public class DocumentIngestionConsumer {
             entity.setChunkIndex(i);
             entity.setChunkText(chunks.get(i));
             entity.setVectorRef(vectorRef);
-            sessionChunkRepository.save(entity);
-            stored++;
+            toSave.add(entity);
         }
-        log.info("Ingestion consumer: monthId={}, documentId={}, year={}, month={}, chunksTotal={}, chunksStored={}",
-                event.monthId(), event.documentId(), event.year(), event.month(), chunks.size(), stored);
+
+        // Improvement #2 — batch all new chunks into a single INSERT statement
+        // instead of one round-trip per chunk. Requires
+        // spring.jpa.properties.hibernate.jdbc.batch_size=50 in application.yml.
+        if (!toSave.isEmpty()) {
+            sessionChunkRepository.saveAll(toSave);
+        }
+
+        log.info("Ingestion consumer: monthId={}, documentId={}, year={}, month={}, " +
+                        "chunksTotal={}, chunksStored={}, chunksSkipped={}",
+                event.monthId(), event.documentId(), event.year(), event.month(),
+                chunks.size(), toSave.size(), skipped);
     }
 }

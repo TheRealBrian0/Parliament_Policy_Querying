@@ -9,6 +9,8 @@ public interface SessionChunkRepository extends JpaRepository<SessionChunkEntity
 
     boolean existsByDocumentIdAndChunkIndex(long documentId, int chunkIndex);
 
+    boolean existsByDocumentId(long documentId);
+
     void deleteByMonthId(long monthId);
 
     List<SessionChunkEntity> findAll();
