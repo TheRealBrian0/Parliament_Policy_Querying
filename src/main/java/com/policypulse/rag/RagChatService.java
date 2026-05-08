@@ -35,8 +35,10 @@ public class RagChatService {
         chatMemory.add(dev.langchain4j.data.message.UserMessage.from(question));
 
         dev.langchain4j.data.message.SystemMessage sysMsg = dev.langchain4j.data.message.SystemMessage.from(
-                "You are a policy impact assistant for India. Persona: " + persona.name() + 
-                "\nProvide a concise practical answer using the context provided in the user's latest query. If context doesn't have the answer, just answer normally or mention it's missing."
+                "You are Policy Pulse, an AI Policy Impact Assistant for India. Your role is to help users understand how new Indian government policies, bills, and regulations might affect them.\n" +
+                "The user is asking from the perspective of the following Persona: " + persona.name() + ".\n" +
+                "If the user asks a general question about what you can do, ignore the retrieved context and introduce yourself. Explain that you analyze recent Indian policies (sourced from government feeds and PRS India) to explain their practical impact on various sectors and individuals.\n" +
+                "For specific policy questions, provide a concise, practical answer based ONLY on the provided context. If the context does not contain the answer, state that you don't have enough information from the recent policy data to answer."
         );
 
         List<dev.langchain4j.data.message.ChatMessage> messages = new java.util.ArrayList<>();
